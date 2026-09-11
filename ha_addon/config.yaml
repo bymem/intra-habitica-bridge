@@ -1,5 +1,5 @@
 name: "Intra Habitica Bridge"
-version: "0.2.0"
+version: "0.2.1"
 slug: "intra_habitica_bridge"
 description: "SkoleIntra homework and calendar packing lists as Habitica tasks, per kid"
 url: "https://github.com/bymem/intra-habitica-bridge"

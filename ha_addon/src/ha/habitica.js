@@ -11,11 +11,66 @@
  * Habitica's last-30 list, so an old completed To-Do eventually vanishes from
  * the response while still existing — callers decide what "missing" means
  * with that in mind.
+ *
+ * Rate limit: Habitica allows 30 requests per minute per user, and each write
+ * action costs four of them (the integration refreshes user + tasks +
+ * completed To-Dos before creating/updating). Writes are therefore paced per
+ * account, and a write that still hits the limit — HA answers with a bare
+ * 500 — waits out one window and retries once. Reads come from HA's cache
+ * and cost nothing.
  */
 
+const WRITE_SPACING_MS = 12000;
+const RATE_WINDOW_MS = 65000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export class HabiticaClient {
-  constructor(ha) {
+  constructor(ha, log) {
     this.ha = ha;
+    this.log = log;
+    // Per config entry: the promise chain that serialises writes, and when
+    // the last one was sent.
+    this.queues = new Map();
+  }
+
+  /** Run a write action for one account, paced and retried as described above. */
+  async #write(configEntry, service, data, options) {
+    if (this.ha.dryRun) {
+      // Nothing is sent, so there is nothing to pace.
+      return this.#send(service, data, options);
+    }
+    const queue = this.queues.get(configEntry) ?? { chain: Promise.resolve(), lastAt: 0 };
+    this.queues.set(configEntry, queue);
+
+    const run = async () => {
+      const wait = queue.lastAt + WRITE_SPACING_MS - Date.now();
+      if (wait > 0) {
+        await sleep(wait);
+      }
+      try {
+        return await this.#send(service, data, options);
+      } catch (error) {
+        if (!/Core API 500/.test(error.message)) {
+          throw error;
+        }
+        this.log?.warn(`${service} hit Habitica's rate limit — retrying in ${RATE_WINDOW_MS / 1000}s`);
+        await sleep(RATE_WINDOW_MS);
+        return this.#send(service, data, options);
+      } finally {
+        queue.lastAt = Date.now();
+      }
+    };
+
+    // Chain behind whatever write is in flight for this account; a failure
+    // there must not poison the chain for the next caller.
+    const result = queue.chain.then(run, run);
+    queue.chain = result.catch(() => {});
+    return result;
+  }
+
+  #send(service, data, options) {
+    return this.ha.callService('habitica', service, data, options);
   }
 
   /**
@@ -46,13 +101,13 @@ export class HabiticaClient {
     if (date) {
       data.date = date;
     }
-    const created = await this.ha.callService('habitica', 'create_todo', data, { returnResponse: true });
+    const created = await this.#write(configEntry, 'create_todo', data, { returnResponse: true });
     return created?.id ? String(created.id) : null;
   }
 
   /** Update fields on an existing To-Do; `fields` uses the action's own names. */
   async updateTodo(configEntry, taskId, fields) {
-    await this.ha.callService('habitica', 'update_todo', { config_entry: configEntry, task: taskId, ...fields });
+    await this.#write(configEntry, 'update_todo', { config_entry: configEntry, task: taskId, ...fields });
   }
 
   /**
@@ -70,12 +125,12 @@ export class HabiticaClient {
     if (checklist?.length) {
       data.add_checklist_item = checklist;
     }
-    const created = await this.ha.callService('habitica', 'create_daily', data, { returnResponse: true });
+    const created = await this.#write(configEntry, 'create_daily', data, { returnResponse: true });
     return created?.id ? String(created.id) : null;
   }
 
   /** Update fields on an existing Daily; `fields` uses the action's own names. */
   async updateDaily(configEntry, taskId, fields) {
-    await this.ha.callService('habitica', 'update_daily', { config_entry: configEntry, task: taskId, ...fields });
+    await this.#write(configEntry, 'update_daily', { config_entry: configEntry, task: taskId, ...fields });
   }
 }

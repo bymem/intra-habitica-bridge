@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Pace Habitica writes (12 s apart per account) and retry once after a
+  rate-limit 500, so a first poll with many assignments no longer fails.
+
 ## 0.2.0
 
 - Homework To-Dos in Habitica: create, update in place, spawn a labelled

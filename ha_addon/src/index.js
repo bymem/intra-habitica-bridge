@@ -41,7 +41,7 @@ if (dryRun) {
 
 const store = new Store(config.data_dir, { readOnly: dryRun });
 const ha = HomeAssistantClient.fromEnvironment({ dryRun, log });
-const habitica = new HabiticaClient(ha);
+const habitica = new HabiticaClient(ha, log.child('habitica'));
 const deps = { config, store, ha, habitica };
 
 // Jobs never throw — each logs its own failures — so a scheduled run can't
