@@ -27,9 +27,11 @@ Full design: `docs/intra-habitica-bridge-spec.md` in the repository root.
 ## Setup
 
 1. Add each kid's Habitica account in HA: Settings → Devices & services →
-   Habitica. Find the config entry ID by opening the entry — it's the last
-   segment of the URL (`/config/integrations/integration/habitica#config_entry=<id>`),
-   or read it from `.storage/core.config_entries`.
+   Habitica. Then find its config entry ID: Developer tools → Actions → pick
+   `habitica.get_tasks` → choose the kid's account in the "Config entry"
+   dropdown → switch to YAML mode. The YAML shows `config_entry: <id>` — that
+   32-character value is `habitica_config_entry`. (The ID in a device page's
+   URL is the device ID, which is not the same thing.)
 2. Fill in the Configuration tab: SkoleIntra login, and one `children` entry
    per kid. Leave `skoleintra_child_path` blank to skip homework for a kid,
    `calendar_entity` blank to skip the packing list.
