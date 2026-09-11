@@ -100,6 +100,45 @@ async function handle(req, res, { config, store, habitica }) {
     return sendJson(res, 201, { id, taskId });
   }
 
+  // Edit a dashboard task: Habitica first, then the stored definition so a
+  // later recreate uses the new one. Type and kid are fixed.
+  const edit = /^\/api\/tasks\/(\d+)$/.exec(route);
+  if (edit && req.method === 'PUT') {
+    const row = store.getManagedTask(Number(edit[1]));
+    if (!row) {
+      return sendJson(res, 404, { error: 'not found' });
+    }
+    const child = childFor(config, row.child_slug);
+    const body = await readJson(req);
+    const problem = validateTask({ ...body, type: row.task_type });
+    if (problem) {
+      return sendJson(res, 400, { error: problem });
+    }
+    const title = body.title.trim();
+    const notes = body.notes?.trim() || null;
+    const fields = { rename: title, notes: notes ?? '', priority: body.difficulty };
+    let dueDate = null;
+    let repeatDays = null;
+    if (row.task_type === 'todo') {
+      dueDate = body.dueDate || null;
+      if (dueDate) {
+        fields.date = dueDate;
+      } else {
+        fields.clear_date = true;
+      }
+      await habitica.updateTodo(child.habitica_config_entry, row.habitica_task_id, fields);
+    } else {
+      repeatDays = body.repeatDays.join(',');
+      await habitica.updateDaily(child.habitica_config_entry, row.habitica_task_id, {
+        ...fields,
+        frequency: 'weekly',
+        repeat: body.repeatDays,
+      });
+    }
+    store.updateManagedTask(row.id, { title, notes, dueDate, repeatDays, difficulty: body.difficulty });
+    return sendJson(res, 200, { ok: true });
+  }
+
   // Pause (every_x: 0) or resume a Daily without losing its history/streak.
   if (route === '/api/tasks/pause' && req.method === 'POST') {
     const body = await readJson(req);

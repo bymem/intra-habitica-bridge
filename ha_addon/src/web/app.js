@@ -18,12 +18,15 @@ const el = {
   dueField: document.getElementById('due-field'),
   dueDate: document.getElementById('due-date'),
   daysField: document.getElementById('days-field'),
+  formTitle: document.getElementById('form-title'),
   submit: document.getElementById('submit'),
+  cancel: document.getElementById('cancel'),
   formError: document.getElementById('form-error'),
   taskList: document.getElementById('task-list'),
 };
 
-const state = { children: [], child: null, type: 'todo' };
+// `editing` is the dashboard task loaded into the form, or null in create mode.
+const state = { children: [], child: null, type: 'todo', editing: null };
 
 async function request(path, options = {}) {
   const response = await fetch(api(path), {
@@ -55,6 +58,9 @@ function renderChildren() {
 
 async function selectChild(slug) {
   state.child = slug;
+  if (state.editing) {
+    resetForm();
+  }
   try {
     localStorage.setItem('habitica-child', slug);
   } catch {
@@ -79,28 +85,66 @@ function selectedDays() {
   return [...el.daysField.querySelectorAll('input:checked')].map((input) => input.value);
 }
 
+function setDays(days) {
+  for (const input of el.daysField.querySelectorAll('input')) {
+    input.checked = days.includes(input.value);
+  }
+}
+
+/** Load a tracked task into the form; type is fixed while editing. */
+function startEditing(task) {
+  state.editing = task;
+  setType(task.type);
+  el.title.value = task.title;
+  el.notes.value = task.notes ?? '';
+  el.difficulty.value = task.difficulty;
+  el.dueDate.value = task.dueDate ?? '';
+  setDays(task.repeatDays);
+  el.formTitle.textContent = `Edit: ${task.title}`;
+  el.submit.textContent = 'Save';
+  el.cancel.hidden = false;
+  el.typeButtons.forEach((button) => { button.disabled = true; });
+  el.formError.textContent = '';
+  el.title.focus();
+}
+
+function resetForm() {
+  state.editing = null;
+  el.title.value = '';
+  el.notes.value = '';
+  el.dueDate.value = '';
+  el.difficulty.value = 'easy';
+  setDays(['m', 't', 'w', 'th', 'f']);
+  el.formTitle.textContent = 'New task';
+  el.submit.textContent = 'Create';
+  el.cancel.hidden = true;
+  el.typeButtons.forEach((button) => { button.disabled = false; });
+  el.formError.textContent = '';
+}
+
 el.typeButtons.forEach((button) => button.addEventListener('click', () => setType(button.dataset.type)));
+el.cancel.addEventListener('click', resetForm);
 
 el.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.formError.textContent = '';
   el.submit.disabled = true;
+  const body = {
+    child: state.child,
+    type: state.type,
+    title: el.title.value,
+    notes: el.notes.value,
+    difficulty: el.difficulty.value,
+    dueDate: el.dueDate.value,
+    repeatDays: selectedDays(),
+  };
   try {
-    await request('tasks', {
-      method: 'POST',
-      body: {
-        child: state.child,
-        type: state.type,
-        title: el.title.value,
-        notes: el.notes.value,
-        difficulty: el.difficulty.value,
-        dueDate: el.dueDate.value,
-        repeatDays: selectedDays(),
-      },
-    });
-    el.title.value = '';
-    el.notes.value = '';
-    el.dueDate.value = '';
+    if (state.editing) {
+      await request(`tasks/${state.editing.id}`, { method: 'PUT', body });
+    } else {
+      await request('tasks', { method: 'POST', body });
+    }
+    resetForm();
     await loadTasks();
   } catch (error) {
     el.formError.textContent = error.message;
@@ -164,6 +208,12 @@ function renderTask(task) {
   }
 
   if (task.source === 'dashboard') {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.textContent = 'Edit';
+    edit.addEventListener('click', () => startEditing(task));
+    buttons.append(edit);
+
     const untrack = document.createElement('button');
     untrack.type = 'button';
     untrack.className = 'danger';

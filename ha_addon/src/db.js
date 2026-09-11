@@ -195,6 +195,19 @@ export class Store {
     return Number(result.lastInsertRowid);
   }
 
+  updateManagedTask(id, { title, notes, dueDate, repeatDays, difficulty }) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE dashboard_managed_tasks
+         SET title = ?, notes = ?, due_date = ?, repeat_days = ?, difficulty = ?
+         WHERE id = ?`,
+      )
+      .run(title, notes ?? null, dueDate ?? null, repeatDays ?? null, difficulty, id);
+  }
+
   /** Record the watchdog's verdict: current status, and a new task ID if it was recreated. */
   verifyManagedTask(id, { taskId, lastKnownStatus }) {
     if (this.readOnly) {

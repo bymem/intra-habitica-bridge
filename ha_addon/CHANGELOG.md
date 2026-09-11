@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- Dashboard: edit tracked tasks (title, notes, difficulty, due date or
+  repeat days).
+
 ## 0.2.1
 
 - Pace Habitica writes (12 s apart per account) and retry once after a
