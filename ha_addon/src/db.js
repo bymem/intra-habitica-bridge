@@ -147,4 +147,104 @@ export class Store {
       )
       .run(lastKnownStatus, new Date().toISOString(), childSlug, sourceKey);
   }
+
+  // --- Packing Daily --------------------------------------------------------
+
+  readPackingDaily(childSlug) {
+    const row = this.db.prepare('SELECT habitica_task_id FROM packing_daily_map WHERE child_slug = ?').get(childSlug);
+    return row?.habitica_task_id ?? null;
+  }
+
+  writePackingDaily(childSlug, taskId) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO packing_daily_map (child_slug, habitica_task_id) VALUES (?, ?)
+         ON CONFLICT(child_slug) DO UPDATE SET habitica_task_id = excluded.habitica_task_id`,
+      )
+      .run(childSlug, taskId);
+  }
+
+  // --- Dashboard-managed tasks ---------------------------------------------
+
+  listManagedTasks(childSlug = null) {
+    const sql = 'SELECT * FROM dashboard_managed_tasks' + (childSlug ? ' WHERE child_slug = ?' : '') + ' ORDER BY created_at DESC';
+    const stmt = this.db.prepare(sql);
+    return childSlug ? stmt.all(childSlug) : stmt.all();
+  }
+
+  getManagedTask(id) {
+    return this.db.prepare('SELECT * FROM dashboard_managed_tasks WHERE id = ?').get(id) ?? null;
+  }
+
+  insertManagedTask({ childSlug, taskId, taskType, title, notes, dueDate, repeatDays, difficulty }) {
+    if (this.readOnly) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `INSERT INTO dashboard_managed_tasks
+           (child_slug, habitica_task_id, task_type, title, notes, due_date, repeat_days, difficulty,
+            last_known_status, created_at, last_verified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'needs_action', ?, ?)`,
+      )
+      .run(childSlug, taskId, taskType, title, notes ?? null, dueDate ?? null, repeatDays ?? null, difficulty, now, now);
+    return Number(result.lastInsertRowid);
+  }
+
+  /** Record the watchdog's verdict: current status, and a new task ID if it was recreated. */
+  verifyManagedTask(id, { taskId, lastKnownStatus }) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE dashboard_managed_tasks
+         SET habitica_task_id = ?, last_known_status = ?, last_verified_at = ?
+         WHERE id = ?`,
+      )
+      .run(taskId, lastKnownStatus, new Date().toISOString(), id);
+  }
+
+  deleteManagedTask(id) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db.prepare('DELETE FROM dashboard_managed_tasks WHERE id = ?').run(id);
+  }
+
+  // --- Streak snapshots -----------------------------------------------------
+
+  readStreak(childSlug, taskId) {
+    const row = this.db
+      .prepare('SELECT streak_value FROM daily_streak_snapshots WHERE child_slug = ? AND habitica_task_id = ?')
+      .get(childSlug, taskId);
+    return row ? row.streak_value : null;
+  }
+
+  writeStreak(childSlug, taskId, streak) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO daily_streak_snapshots (child_slug, habitica_task_id, streak_value, recorded_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(child_slug, habitica_task_id) DO UPDATE SET
+           streak_value = excluded.streak_value, recorded_at = excluded.recorded_at`,
+      )
+      .run(childSlug, taskId, streak, new Date().toISOString());
+  }
+
+  deleteStreak(childSlug, taskId) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare('DELETE FROM daily_streak_snapshots WHERE child_slug = ? AND habitica_task_id = ?')
+      .run(childSlug, taskId);
+  }
 }

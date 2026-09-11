@@ -12,6 +12,8 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const DEFAULTS = {
   poll_cron: '0 6,13,17 * * 1-5',
+  packing_cron: '0 1 * * *',
+  watchdog_cron: '15 * * * *',
   log_level: 'info',
   data_dir: '/data',
   sanity_brake: {

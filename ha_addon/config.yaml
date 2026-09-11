@@ -1,5 +1,5 @@
 name: "Intra Habitica Bridge"
-version: "0.1.0"
+version: "0.2.0"
 slug: "intra_habitica_bridge"
 description: "SkoleIntra homework and calendar packing lists as Habitica tasks, per kid"
 url: "https://github.com/bymem/intra-habitica-bridge"
@@ -28,7 +28,12 @@ panel_title: "Habitica"
 homeassistant_api: true
 
 options:
+  # SkoleIntra homework poll: weekdays 06:00, 13:00, 17:00.
   poll_cron: "0 6,13,17 * * 1-5"
+  # Calendar -> packing-list checklist, nightly.
+  packing_cron: "0 1 * * *"
+  # Recreate-on-delete and streak-drop check, hourly.
+  watchdog_cron: "15 * * * *"
   log_level: "info"
   skoleintra:
     base_url: "https://SCHOOL.m.skoleintra.dk"
@@ -51,6 +56,8 @@ options:
 
 schema:
   poll_cron: "str"
+  packing_cron: "str"
+  watchdog_cron: "str"
   log_level: "list(error|warn|info|debug)"
   skoleintra:
     base_url: "url"

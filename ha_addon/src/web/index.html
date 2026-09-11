@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Habitica</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      // Injected by the server per request: Ingress mounts this app under a
+      // generated path that the page has no other way of knowing.
+      window.BASE_PATH = '__BASE_PATH__';
+    </script>
+  </head>
+  <body>
+    <header class="bar">
+      <h1>Habitica</h1>
+      <div id="children" class="children" role="group" aria-label="Kid"></div>
+      <span id="status" class="status"></span>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>New task</h2>
+        <form id="create-form">
+          <div class="type-toggle" role="group" aria-label="Task type">
+            <button type="button" class="type on" data-type="todo">To-Do</button>
+            <button type="button" class="type" data-type="daily">Daily</button>
+          </div>
+
+          <label>
+            Title
+            <input type="text" id="title" required autocomplete="off" />
+          </label>
+
+          <label>
+            Notes
+            <textarea id="notes" rows="3"></textarea>
+          </label>
+
+          <div class="row">
+            <label>
+              Difficulty
+              <select id="difficulty">
+                <option value="trivial">Trivial</option>
+                <option value="easy" selected>Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
+
+            <label id="due-field">
+              Due date
+              <input type="date" id="due-date" />
+            </label>
+          </div>
+
+          <fieldset id="days-field" class="days" hidden>
+            <legend>Repeat on</legend>
+            <label><input type="checkbox" value="m" checked /> Mon</label>
+            <label><input type="checkbox" value="t" checked /> Tue</label>
+            <label><input type="checkbox" value="w" checked /> Wed</label>
+            <label><input type="checkbox" value="th" checked /> Thu</label>
+            <label><input type="checkbox" value="f" checked /> Fri</label>
+            <label><input type="checkbox" value="s" /> Sat</label>
+            <label><input type="checkbox" value="su" /> Sun</label>
+          </fieldset>
+
+          <div class="actions">
+            <button type="submit" class="primary" id="submit">Create</button>
+            <span id="form-error" class="error"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Tracked tasks</h2>
+        <p class="hint">
+          Tasks created here are recreated if they disappear from Habitica.
+          Pause a Daily for holidays instead of deleting it — its streak and
+          history stay intact.
+        </p>
+        <div id="task-list" class="tasks"></div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

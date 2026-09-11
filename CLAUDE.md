@@ -14,9 +14,14 @@ behaviour; it records decisions and things confirmed against Habitica/HA.
   `children` list is the single source of which kids exist.
 - `ha_addon/src/db.js` — SQLite (`node:sqlite`, Node 24) state.
 - `ha_addon/src/ha/client.js` — Supervisor Core API (actions, calendars, events).
+- `ha_addon/src/ha/habitica.js` — `habitica.*` action wrapper (get_tasks,
+  create/update todo/daily).
 - `ha_addon/src/skoleintra/` — Lektiebog scraper (ported from
   `skoleintra-ha-bridge`) and the pure reconcile step.
-- `ha_addon/src/jobs/` — scheduled jobs.
+- `ha_addon/src/jobs/` — scheduled jobs: `homework.js`, `packing.js`,
+  `watchdog.js` (recreate-on-delete + streak snapshots).
+- `ha_addon/src/api/server.js` — dashboard HTTP API + static host (Ingress).
+- `ha_addon/src/web/` — dashboard frontend, vanilla JS, follows HA's theme.
 
 ## Conventions
 
@@ -27,8 +32,10 @@ behaviour; it records decisions and things confirmed against Habitica/HA.
 - All Habitica calls go through `habitica.*` actions with `config_entry`,
   never Habitica's API directly.
 - `--dry-run` must never write to HA or the database.
-- Frontend (when added) follows HA's theme like `reolink-nvr-bridge`'s
-  `src/web/`.
+- Frontend follows HA's theme via `web/theme.js` (copied from
+  `reolink-nvr-bridge`); no framework, no build.
+- `get_tasks` field names are habiticalib's camelCase (`everyX`, `completed`,
+  `streak`, `checklist[].text`); HA's weekday codes are `m t w th f s su`.
 
 ## Running locally
 

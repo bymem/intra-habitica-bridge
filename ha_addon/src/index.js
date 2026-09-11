@@ -1,7 +1,7 @@
-// Entry point: loads config, opens state, schedules the jobs.
+// Entry point: loads config, opens state, starts the dashboard and the jobs.
 //
 // Run modes:
-//   node src/index.js              scheduled, per poll_cron
+//   node src/index.js              scheduled jobs + dashboard
 //   node src/index.js --once       one homework poll, then exit
 //   node src/index.js --dry-run    one poll with no writes to HA or the database
 
@@ -10,7 +10,11 @@ import { loadConfig } from './config.js';
 import { Store } from './db.js';
 import { createLogger, setLogLevel } from './log.js';
 import { HomeAssistantClient } from './ha/client.js';
+import { HabiticaClient } from './ha/habitica.js';
 import { runHomeworkPoll } from './jobs/homework.js';
+import { runPackingSync } from './jobs/packing.js';
+import { runWatchdog } from './jobs/watchdog.js';
+import { startServer } from './api/server.js';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
@@ -37,16 +41,38 @@ if (dryRun) {
 
 const store = new Store(config.data_dir, { readOnly: dryRun });
 const ha = HomeAssistantClient.fromEnvironment({ dryRun, log });
+const habitica = new HabiticaClient(ha);
+const deps = { config, store, ha, habitica };
 
-const jobs = { config, store, ha, log: log.child('homework') };
+// Jobs never throw — each logs its own failures — so a scheduled run can't
+// take the process down.
+const homework = () => runHomeworkPoll({ ...deps, log: log.child('homework') });
+const packing = () => runPackingSync({ ...deps, log: log.child('packing') });
+const watchdog = () => runWatchdog({ ...deps, log: log.child('watchdog') });
 
 if (runOnce) {
-  await runHomeworkPoll(jobs);
+  await homework();
   store.close();
 } else {
-  log.info(`homework poll scheduled: ${config.poll_cron}`);
-  cron.schedule(config.poll_cron, () => runHomeworkPoll(jobs));
-  await runHomeworkPoll(jobs);
+  startServer({ ...deps, log: log.child('dashboard') });
+
+  for (const [name, expression, job] of [
+    ['homework poll', config.poll_cron, homework],
+    ['packing sync', config.packing_cron, packing],
+    ['watchdog', config.watchdog_cron, watchdog],
+  ]) {
+    if (!cron.validate(expression)) {
+      log.error(`invalid cron expression for ${name}: "${expression}" — job not scheduled`);
+      continue;
+    }
+    log.info(`${name} scheduled: ${expression}`);
+    cron.schedule(expression, job);
+  }
+
+  // A startup pass so a fresh install shows results immediately rather than
+  // at the next scheduled time.
+  await homework();
+  await watchdog();
 
   const shutdown = () => {
     log.info('shutting down');

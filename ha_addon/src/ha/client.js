@@ -68,12 +68,18 @@ export class HomeAssistantClient {
   }
 
   async #request(method, path, data) {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-      body: data === undefined ? undefined : JSON.stringify(data),
-      signal: AbortSignal.timeout(60000),
-    });
+    let res;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        body: data === undefined ? undefined : JSON.stringify(data),
+        signal: AbortSignal.timeout(60000),
+      });
+    } catch (error) {
+      // fetch's own message is a bare "fetch failed"; the cause has the reason.
+      throw new Error(`Core API unreachable on ${method} ${path}: ${error.cause?.message ?? error.message}`);
+    }
 
     const text = await res.text();
     if (!res.ok) {
