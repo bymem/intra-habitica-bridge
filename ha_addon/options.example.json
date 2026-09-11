@@ -1,0 +1,26 @@
+{
+  "poll_cron": "0 6,13,17 * * 1-5",
+  "log_level": "debug",
+  "data_dir": "./data",
+  "skoleintra": {
+    "base_url": "https://SCHOOL.m.skoleintra.dk",
+    "username": "",
+    "password": ""
+  },
+  "sanity_brake": {
+    "enabled": true,
+    "min_changes": 3,
+    "max_change_ratio": 0.5
+  },
+  "children": [
+    {
+      "slug": "child-one",
+      "name": "Child One",
+      "skoleintra_child_path": "parent/0000/NameOne",
+      "calendar_entity": "",
+      "habitica_config_entry": "",
+      "homework_difficulty": "medium",
+      "packing_difficulty": "trivial"
+    }
+  ]
+}

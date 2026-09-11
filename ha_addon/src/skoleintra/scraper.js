@@ -1,0 +1,299 @@
+// SkoleIntra access layer.
+//
+// IMPORTANT — this does NOT use the skoleintra package's data methods.
+// That package only scrapes the "Ugeplaner" module, which this school has never
+// published to (the site states "Der er ingen ugeplaner for <class> i skoleåret
+// <year>", and a sweep of a full term's ISO weeks returned nothing for any child).
+//
+// The homework actually lives in the "Lektiebog" tab — a diary with a numeric id
+// per class, which the package has no method for:
+//     /parent/{childId}/{name}item/weeklyplansandhomework/diary/notes/{diaryId}
+//
+// So the package is used for LOGIN ONLY (it handles the SAML + noscript form
+// dance correctly, which is the fiddly part), and we drive its authenticated
+// axios instance ourselves for the diary pages.
+//
+// URL shape note: there is deliberately no separator before "item" —
+// `parent/{childId}/{name}` + `item/weeklyplansandhomework/...`. That looks like
+// a bug but mirrors the site's own menu links; inserting a slash returns a 404.
+
+import { parse } from 'node-html-parser';
+import SkoleIntraModule from 'skoleintra';
+
+// Published as CommonJS (`exports.default = SkoleIntra`); a default import from
+// ESM binds the module object rather than the class.
+const SkoleIntra = SkoleIntraModule.default ?? SkoleIntraModule;
+
+const DA_MONTHS = {
+  jan: 1, feb: 2, mar: 3, apr: 4, maj: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dec: 12,
+};
+
+// The teachers' CKEditor content is full of HTML entities and node-html-parser's
+// innerText leaves them encoded. This text goes straight into a to-do
+// description, so decode generally rather than entity-by-entity.
+const NAMED_ENTITIES = {
+  nbsp: ' ', amp: '&', quot: '"', apos: "'", lt: '<', gt: '>',
+  aring: 'å', Aring: 'Å', oslash: 'ø', Oslash: 'Ø', aelig: 'æ', AElig: 'Æ',
+  eacute: 'é', egrave: 'è', uuml: 'ü', ouml: 'ö', auml: 'ä', hellip: '…',
+  ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+};
+
+export function decodeEntities(text) {
+  return text.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, body) => {
+    if (body[0] === '#') {
+      const code = body[1].toLowerCase() === 'x'
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    return NAMED_ENTITIES[body] ?? NAMED_ENTITIES[body.toLowerCase()] ?? match;
+  });
+}
+
+function clean(node) {
+  return decodeEntities(node.innerText).replace(/\s+/g, ' ').trim();
+}
+
+// Habitica renders a task's notes as Markdown, and the
+// teachers' notes are real HTML — <strong>, <br>, <div> paragraphs and genuine
+// <a href> links to course material. Flattening that to plain text threw the
+// structure away and left bare URLs, so convert rather than strip.
+//
+// Only the handful of tags that actually appear are handled; anything else
+// falls through to its text, which is the safe outcome for a format we haven't
+// seen before.
+function renderMarkdown(node) {
+  // Text node: collapse internal whitespace, keep the words.
+  if (node.nodeType === 3) {
+    return decodeEntities(node.rawText).replace(/\s+/g, ' ');
+  }
+  if (node.nodeType !== 1) {
+    return '';
+  }
+
+  const tag = (node.rawTagName ?? '').toUpperCase();
+  const inner = node.childNodes.map(renderMarkdown).join('');
+  const trimmed = inner.trim();
+
+  switch (tag) {
+    case 'BR':
+      // Two trailing spaces is a Markdown hard break, and harmless as plain text.
+      return '  \n';
+    case 'P':
+    case 'DIV':
+    case 'TR':
+      return trimmed ? `\n\n${trimmed}\n\n` : '';
+    case 'STRONG':
+    case 'B':
+      return trimmed ? `**${trimmed}**` : '';
+    case 'EM':
+    case 'I':
+      return trimmed ? `*${trimmed}*` : '';
+    case 'A': {
+      const href = node.getAttribute('href');
+      if (!href) {
+        return trimmed;
+      }
+      if (!trimmed || trimmed === href) {
+        return href;
+      }
+      return `[${trimmed}](${href})`;
+    }
+    case 'LI':
+      return trimmed ? `\n- ${trimmed}` : '';
+    case 'UL':
+    case 'OL':
+      return trimmed ? `\n${inner}\n` : '';
+    case 'SCRIPT':
+    case 'STYLE':
+      return '';
+    default:
+      return inner;
+  }
+}
+
+export function htmlToMarkdown(node) {
+  return renderMarkdown(node)
+    // Drop indentation a line inherited from the source HTML's formatting.
+    // Only leading whitespace — the two trailing spaces before a newline are a
+    // deliberate Markdown hard break.
+    .replace(/\n[ \t]+/g, '\n')
+    // Collapse runs of blank lines to a single paragraph break.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// "Mandag, 17. aug. 2026:" -> "2026-08-17"
+export function parseDanishDate(heading) {
+  const match = /(\d{1,2})\.\s*([a-zæøå]+)\.?\s*(\d{4})/i.exec(decodeEntities(heading));
+  if (!match) {
+    return null;
+  }
+  const month = DA_MONTHS[match[2].slice(0, 3).toLowerCase()];
+  if (!month) {
+    return null;
+  }
+  const day = String(Number(match[1])).padStart(2, '0');
+  return `${match[3]}-${String(month).padStart(2, '0')}-${day}`;
+}
+
+// Turn one diary note into homework items.
+//
+// Both current classes use a two-column FAG/LEKTIER table, but that is a
+// per-teacher convention rather than a schema — so when there is no usable
+// table we keep the note whole instead of silently returning nothing.
+export function itemsFromNote(noteEl, date) {
+  const table = noteEl.querySelector('table');
+
+  if (table) {
+    const items = [];
+    for (const row of table.querySelectorAll('tr')) {
+      const cells = row.querySelectorAll('td, th');
+      if (cells.length < 2) {
+        continue;
+      }
+      const subject = clean(cells[0]);
+      // Subject stays plain text (it becomes the To-Do title); the homework
+      // becomes the notes, which Habitica renders as Markdown.
+      const homework = htmlToMarkdown(cells[1]);
+      // Drop the header row and subjects with nothing assigned.
+      if (!subject || !homework || /^FAG$/i.test(subject) || /^LEKTIER$/i.test(homework)) {
+        continue;
+      }
+      items.push({ date, subject, homework });
+    }
+    if (items.length > 0) {
+      return items;
+    }
+    // A table with no homework in it (start of term, "no homework today").
+    // Whatever the teacher wrote around it may still be worth keeping, but the
+    // empty grid of subject names is not — drop it before falling back.
+    table.remove();
+  }
+
+  const remaining = htmlToMarkdown(noteEl);
+  return remaining ? [{ date, subject: 'Lektier', homework: remaining }] : [];
+}
+
+// Today in the container's local timezone, as yyyy-mm-dd.
+// Deliberately not toISOString(), which is UTC and would roll the date over at
+// the wrong moment for a Danish school day.
+export function localIsoDate(now = new Date()) {
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+// The Lektiebog notes listing returns a period surrounding today, so it
+// includes days that have already passed. Homework for a past date is already
+// due and shouldn't become a fresh To-Do. Today itself is kept — the first
+// poll of the day is before school.
+//
+// Dates are yyyy-mm-dd, so a plain string compare is a correct date compare.
+export function dropPastItems(items, today = localIsoDate()) {
+  return items.filter((item) => item.date >= today);
+}
+
+export class SkoleIntraClient {
+  // `session` is anything with readCookies()/writeCookies(text) — the Store.
+  constructor({ baseUrl, username, password, session }) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.session = session;
+    this.instance = new SkoleIntra(username, password, this.baseUrl);
+    this.authenticated = false;
+  }
+
+  // Restore a previous session if we have one. The library's README recommends
+  // reusing cookies to avoid tripping automation protection, so treat this as
+  // required rather than an optimisation.
+  async restoreSession() {
+    const cookies = this.session.readCookies()?.trim();
+    if (!cookies) {
+      return false;
+    }
+    await this.instance.setCookies(cookies);
+    this.authenticated = true;
+    return true;
+  }
+
+  async persistSession() {
+    this.session.writeCookies(await this.instance.getCookies());
+  }
+
+  async login() {
+    const ok = await this.instance.authenticate();
+    if (!ok) {
+      throw new Error('SkoleIntra authentication failed — credentials rejected or the login form changed.');
+    }
+    this.authenticated = true;
+    await this.persistSession();
+  }
+
+  static looksLikeLoginPage(html) {
+    return !!parse(html).getElementById('UserName');
+  }
+
+  // GET a path under the base URL, logging in and retrying once if the stored
+  // session has expired.
+  async get(path) {
+    if (!this.authenticated) {
+      await this.login();
+    }
+    let response = await this.instance.axiosInstance.get(`${this.baseUrl}/${path}`);
+
+    if (SkoleIntraClient.looksLikeLoginPage(response.data)) {
+      await this.login();
+      response = await this.instance.axiosInstance.get(`${this.baseUrl}/${path}`);
+      if (SkoleIntraClient.looksLikeLoginPage(response.data)) {
+        throw new Error(`Still unauthenticated after re-login while fetching ${path}`);
+      }
+    }
+
+    // The library's own automation-protection heuristic: a 500 whose body is a
+    // bare one-h1/one-h2 error page.
+    if (response.status === 500) {
+      throw new Error(
+        'Request appears to have been blocked by automation protection. ' +
+        'Log in via a normal browser, then seed the stored session cookies from that session.',
+      );
+    }
+    return response.data;
+  }
+
+  // Each class's Lektiebog has its own numeric diary id. It is stable, but
+  // discovering it costs one request and avoids hard-coding a value that would
+  // silently break at a class change.
+  async discoverDiaryId(childPath) {
+    const html = await this.get(`${childPath}item/weeklyplansandhomework/diary`);
+    return /diary\/(?:notes\/)?(\d+)/.exec(html)?.[1] ?? null;
+  }
+
+  // One request returns every note in the site's current period, so this is a
+  // single fetch per child per poll rather than one per date.
+  async fetchHomework(childPath, diaryId) {
+    const html = await this.get(`${childPath}item/weeklyplansandhomework/diary/notes/${diaryId}`);
+    const container = parse(html).querySelector('#sk-diary-notes-container');
+    if (!container) {
+      throw new Error(`No diary notes container on the Lektiebog page for ${childPath}`);
+    }
+
+    const items = [];
+    const datesSeen = [];
+    for (const box of container.querySelectorAll('.sk-white-box')) {
+      const date = parseDanishDate(clean(box).slice(0, 60));
+      const body = box.querySelector('.sk-user-input');
+      if (!date || !body) {
+        continue;
+      }
+      datesSeen.push(date);
+      items.push(...itemsFromNote(body, date));
+    }
+    return { items, datesSeen };
+  }
+}
+
+// Identifies how homework text is rendered into task notes. If this rendering
+// ever changes, every content hash shifts at once and the next poll will trip
+// the MASS_CHANGE sanity brake — disable the brake for one poll in that case.
+export const CONTENT_FORMAT = 'markdown-v1';

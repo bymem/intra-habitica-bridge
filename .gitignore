@@ -1,0 +1,7 @@
+node_modules/
+
+# Real credentials and local state — only options.example.json belongs in git.
+ha_addon/options.json
+ha_addon/data/
+.env
+.codegraph/
