@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Dashboard scrolls inside the panel itself, fixing a stuck page in the HA
+  iOS app.
+
 ## 0.3.0
 
 - Dashboard: edit tracked tasks (title, notes, difficulty, due date or
