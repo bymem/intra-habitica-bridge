@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Completed one-off To-Dos disappear from the dashboard and are untracked
+  by the watchdog.
+
 ## 0.3.1
 
 - Dashboard scrolls inside the panel itself, fixing a stuck page in the HA

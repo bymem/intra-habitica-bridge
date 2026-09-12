@@ -34,6 +34,13 @@ async function checkChild({ child, store, ha, habitica, log }) {
   for (const row of store.listManagedTasks(child.slug)) {
     const task = tasks.get(row.habitica_task_id);
     if (task) {
+      if (row.task_type === 'todo' && task.completed) {
+        // A finished one-off is never recreated, so there is nothing left
+        // to track; drop it rather than carry a row that can't act.
+        log.info(`managed To-Do "${row.title}" finished — untracking`);
+        store.deleteManagedTask(row.id);
+        continue;
+      }
       store.verifyManagedTask(row.id, {
         taskId: row.habitica_task_id,
         lastKnownStatus: task.completed ? 'completed' : 'needs_action',

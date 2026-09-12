@@ -173,18 +173,23 @@ async function handle(req, res, { config, store, habitica }) {
  */
 async function listTasks(child, store, habitica) {
   const live = await habitica.getTasks(child.habitica_config_entry, ['todo', 'daily']);
-  const tasks = store.listManagedTasks(child.slug).map((row) => ({
-    id: row.id,
-    taskId: row.habitica_task_id,
-    source: 'dashboard',
-    type: row.task_type,
-    title: row.title,
-    notes: row.notes,
-    dueDate: row.due_date,
-    repeatDays: row.repeat_days ? row.repeat_days.split(',') : [],
-    difficulty: row.difficulty,
-    ...liveState(live.get(row.habitica_task_id)),
-  }));
+  const tasks = store
+    .listManagedTasks(child.slug)
+    // A finished one-off is done for good: hide it now, the watchdog drops
+    // the row on its next pass.
+    .filter((row) => !(row.task_type === 'todo' && live.get(row.habitica_task_id)?.completed))
+    .map((row) => ({
+      id: row.id,
+      taskId: row.habitica_task_id,
+      source: 'dashboard',
+      type: row.task_type,
+      title: row.title,
+      notes: row.notes,
+      dueDate: row.due_date,
+      repeatDays: row.repeat_days ? row.repeat_days.split(',') : [],
+      difficulty: row.difficulty,
+      ...liveState(live.get(row.habitica_task_id)),
+    }));
 
   const packingId = store.readPackingDaily(child.slug);
   if (packingId) {
