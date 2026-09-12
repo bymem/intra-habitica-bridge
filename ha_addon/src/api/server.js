@@ -41,7 +41,11 @@ export function startServer(deps) {
   return server;
 }
 
-async function handle(req, res, { config, store, habitica }) {
+// Jobs currently running from a dashboard trigger, so a double tap can't
+// start the same one twice.
+const running = new Set();
+
+async function handle(req, res, { config, store, habitica, jobs }) {
   // Ingress rewrites the path prefix; strip it so routing sees a stable URL.
   const ingressPath = req.headers['x-ingress-path'] ?? '';
   const url = new URL(req.url, 'http://localhost');
@@ -161,6 +165,25 @@ async function handle(req, res, { config, store, habitica }) {
     return sendJson(res, 200, { ok: true });
   }
 
+  // Run a scheduled job now — for testing, same code path as the cron run.
+  const job = /^\/api\/jobs\/(\w+)$/.exec(route);
+  if (job && req.method === 'POST') {
+    const run = jobs?.[job[1]];
+    if (!run) {
+      return sendJson(res, 404, { error: 'unknown job' });
+    }
+    if (running.has(job[1])) {
+      return sendJson(res, 409, { error: 'already running' });
+    }
+    running.add(job[1]);
+    try {
+      await run();
+    } finally {
+      running.delete(job[1]);
+    }
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (req.method !== 'GET') {
     return sendJson(res, 405, { error: 'method not allowed' });
   }
@@ -204,6 +227,7 @@ async function listTasks(child, store, habitica) {
       dueDate: null,
       repeatDays: [],
       difficulty: child.packing_difficulty,
+      checklistCount: task?.checklist?.length ?? 0,
       ...liveState(task),
     });
   }

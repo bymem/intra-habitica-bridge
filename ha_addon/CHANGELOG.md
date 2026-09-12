@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Dashboard: "Sync packing" button runs the packing sync now; packing row
+  shows its checklist item count.
+
 ## 0.3.2
 
 - Completed one-off To-Dos disappear from the dashboard and are untracked

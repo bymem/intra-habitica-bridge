@@ -54,7 +54,7 @@ if (runOnce) {
   await homework();
   store.close();
 } else {
-  startServer({ ...deps, log: log.child('dashboard') });
+  startServer({ ...deps, jobs: { packing }, log: log.child('dashboard') });
 
   for (const [name, expression, job] of [
     ['homework poll', config.poll_cron, homework],

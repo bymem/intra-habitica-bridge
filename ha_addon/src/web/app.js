@@ -23,6 +23,7 @@ const el = {
   cancel: document.getElementById('cancel'),
   formError: document.getElementById('form-error'),
   taskList: document.getElementById('task-list'),
+  syncPacking: document.getElementById('sync-packing'),
 };
 
 // `editing` is the dashboard task loaded into the form, or null in create mode.
@@ -153,6 +154,21 @@ el.form.addEventListener('submit', async (event) => {
   }
 });
 
+// --- Manual job runs -------------------------------------------------------
+
+el.syncPacking.addEventListener('click', async () => {
+  el.syncPacking.disabled = true;
+  el.status.textContent = 'Syncing packing lists…';
+  try {
+    await request('jobs/packing', { method: 'POST' });
+    await loadTasks();
+  } catch (error) {
+    el.status.textContent = error.message;
+  } finally {
+    el.syncPacking.disabled = false;
+  }
+});
+
 // --- Task list -------------------------------------------------------------
 
 async function loadTasks() {
@@ -241,6 +257,9 @@ function describe(task) {
     parts.push('paused');
   } else if (task.completed) {
     parts.push('done');
+  }
+  if (task.source === 'packing' && task.exists) {
+    parts.push(`${task.checklistCount} item${task.checklistCount === 1 ? '' : 's'}`);
   }
   if (task.streak) {
     parts.push(`streak ${task.streak}`);
