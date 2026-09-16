@@ -218,6 +218,26 @@ async function listTasks(child, store, habitica) {
       ...liveState(live.get(row.habitica_task_id)),
     }));
 
+  const packing = store.readPackingDaily(child.slug);
+  if (packing) {
+    const task = live.get(packing.habitica_task_id);
+    tasks.push({
+      id: null,
+      taskId: packing.habitica_task_id,
+      source: 'packing',
+      type: 'daily',
+      title: task?.text ?? 'Pakkeliste',
+      notes: null,
+      dueDate: null,
+      repeatDays: [],
+      difficulty: child.packing_difficulty,
+      checklistCount: task?.checklist?.length ?? 0,
+      createdAt: packing.created_at,
+      updatedAt: packing.updated_at,
+      ...liveState(task),
+    });
+  }
+
   // Homework from today on; SkoleIntra owns the content, so it's read-only
   // here and the title/notes come from the live task.
   for (const row of store.listHomework(child.slug, localIsoDate())) {
@@ -235,26 +255,6 @@ async function listTasks(child, store, habitica) {
       difficulty: child.homework_difficulty,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      ...liveState(task),
-    });
-  }
-
-  const packing = store.readPackingDaily(child.slug);
-  if (packing) {
-    const task = live.get(packing.habitica_task_id);
-    tasks.push({
-      id: null,
-      taskId: packing.habitica_task_id,
-      source: 'packing',
-      type: 'daily',
-      title: task?.text ?? 'Pakkeliste',
-      notes: null,
-      dueDate: null,
-      repeatDays: [],
-      difficulty: child.packing_difficulty,
-      checklistCount: task?.checklist?.length ?? 0,
-      createdAt: packing.created_at,
-      updatedAt: packing.updated_at,
       ...liveState(task),
     });
   }

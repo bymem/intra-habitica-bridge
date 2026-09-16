@@ -136,13 +136,13 @@ export class Store {
     );
   }
 
-  /** Tracked homework dated `fromDate` or later, oldest first, for the dashboard. */
+  /** Tracked homework due `fromDate` or later, soonest due first, for the dashboard. */
   listHomework(childSlug, fromDate) {
     return this.db
       .prepare(
         `SELECT * FROM homework_task_map
          WHERE child_slug = ? AND substr(source_key, 1, 10) >= ?
-         ORDER BY source_key`,
+         ORDER BY substr(source_key, 1, 10), source_key`,
       )
       .all(childSlug, fromDate);
   }

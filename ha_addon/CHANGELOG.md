@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.5
+
+- Dashboard: homework and the packing list moved to their own "Synced" card,
+  homework in due-date order.
+
 ## 0.3.4
 
 - Dashboard lists homework To-Dos (today onwards) alongside dashboard and

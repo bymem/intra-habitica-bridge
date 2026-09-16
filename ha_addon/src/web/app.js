@@ -24,6 +24,7 @@ const el = {
   cancel: document.getElementById('cancel'),
   formError: document.getElementById('form-error'),
   taskList: document.getElementById('task-list'),
+  syncedList: document.getElementById('synced-list'),
   syncPacking: document.getElementById('sync-packing'),
 };
 
@@ -183,15 +184,22 @@ async function loadTasks() {
   }
 }
 
+// Dashboard-created tasks and synced ones (homework, packing) live in
+// separate cards; the API returns synced ones already in due-date order.
 function renderTasks(tasks) {
+  renderList(el.taskList, tasks.filter((task) => task.source === 'dashboard'), 'Nothing tracked for this kid yet.');
+  renderList(el.syncedList, tasks.filter((task) => task.source !== 'dashboard'), 'Nothing synced for this kid yet.');
+}
+
+function renderList(container, tasks, emptyText) {
   if (tasks.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'Nothing tracked for this kid yet.';
-    el.taskList.replaceChildren(empty);
+    empty.textContent = emptyText;
+    container.replaceChildren(empty);
     return;
   }
-  el.taskList.replaceChildren(...tasks.map(renderTask));
+  container.replaceChildren(...tasks.map(renderTask));
 }
 
 function renderTask(task) {
