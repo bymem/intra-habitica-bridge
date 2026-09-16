@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.4
+
+- Dashboard lists homework To-Dos (today onwards) alongside dashboard and
+  packing tasks, with a source badge and created/updated times.
+- Homework `updated_at` now only moves on a content change or recreate, not
+  when the kid completes the task.
+- Packing Daily records when it was created and when its checklist last
+  changed.
+
 ## 0.3.3
 
 - Dashboard: "Sync packing" button runs the packing sync now; packing row

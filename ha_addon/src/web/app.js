@@ -1,4 +1,5 @@
-// Parent dashboard: pick a kid, create a To-Do or Daily, manage tracked tasks.
+// Parent dashboard: pick a kid, create a To-Do or Daily, see everything the
+// bridge tracks for them — dashboard tasks, homework and the packing list.
 
 import { followHomeAssistantTheme } from './theme.js';
 
@@ -204,7 +205,8 @@ function renderTask(task) {
   title.className = 'title';
   const badge = document.createElement('span');
   badge.className = 'badge';
-  badge.textContent = task.source === 'packing' ? 'packing' : task.type;
+  // Where the task came from; dashboard tasks show their type instead.
+  badge.textContent = task.source === 'dashboard' ? task.type : task.source;
   title.append(badge, task.title);
 
   const meta = document.createElement('div');
@@ -264,7 +266,20 @@ function describe(task) {
   if (task.streak) {
     parts.push(`streak ${task.streak}`);
   }
+  if (task.createdAt) {
+    parts.push(`created ${formatTime(task.createdAt)}`);
+  }
+  // Only worth a mention when something changed after creation.
+  if (task.updatedAt && task.updatedAt !== task.createdAt) {
+    parts.push(`updated ${formatTime(task.updatedAt)}`);
+  }
   return parts.join(' · ');
+}
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 async function act(button, work) {

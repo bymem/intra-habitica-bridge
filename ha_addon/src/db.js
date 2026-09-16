@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS homework_task_map (
 
 CREATE TABLE IF NOT EXISTS packing_daily_map (
   child_slug TEXT PRIMARY KEY,
-  habitica_task_id TEXT NOT NULL       -- one Daily per kid, checklist replaced nightly
+  habitica_task_id TEXT NOT NULL,      -- one Daily per kid, checklist replaced nightly
+  created_at TEXT,
+  updated_at TEXT                      -- last time the checklist actually changed
 );
 
 CREATE TABLE IF NOT EXISTS dashboard_managed_tasks (
@@ -73,6 +75,23 @@ export class Store {
     this.db = new DatabaseSync(path.join(dataDir, 'bridge.sqlite'));
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /**
+   * Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS
+   * leaves an existing table alone, so these are applied on top when missing.
+   */
+  migrate() {
+    const columns = this.db
+      .prepare('PRAGMA table_info(packing_daily_map)')
+      .all()
+      .map((column) => column.name);
+    for (const column of ['created_at', 'updated_at']) {
+      if (!columns.includes(column)) {
+        this.db.exec(`ALTER TABLE packing_daily_map ADD COLUMN ${column} TEXT`);
+      }
+    }
   }
 
   close() {
@@ -117,6 +136,18 @@ export class Store {
     );
   }
 
+  /** Tracked homework dated `fromDate` or later, oldest first, for the dashboard. */
+  listHomework(childSlug, fromDate) {
+    return this.db
+      .prepare(
+        `SELECT * FROM homework_task_map
+         WHERE child_slug = ? AND substr(source_key, 1, 10) >= ?
+         ORDER BY source_key`,
+      )
+      .all(childSlug, fromDate);
+  }
+
+  /** Create or replace the mapping; `updated_at` marks a content change or recreate. */
   upsertHomework(childSlug, sourceKey, { taskId, contentHash, lastKnownStatus }) {
     if (this.readOnly) {
       return;
@@ -136,35 +167,48 @@ export class Store {
       .run(childSlug, sourceKey, taskId, contentHash, lastKnownStatus, now, now);
   }
 
+  /** Mirror Habitica's completion state. Not an update — the homework itself didn't change. */
   updateHomeworkStatus(childSlug, sourceKey, lastKnownStatus) {
     if (this.readOnly) {
       return;
     }
     this.db
-      .prepare(
-        `UPDATE homework_task_map SET last_known_status = ?, updated_at = ?
-         WHERE child_slug = ? AND source_key = ?`,
-      )
-      .run(lastKnownStatus, new Date().toISOString(), childSlug, sourceKey);
+      .prepare('UPDATE homework_task_map SET last_known_status = ? WHERE child_slug = ? AND source_key = ?')
+      .run(lastKnownStatus, childSlug, sourceKey);
   }
 
   // --- Packing Daily --------------------------------------------------------
 
   readPackingDaily(childSlug) {
-    const row = this.db.prepare('SELECT habitica_task_id FROM packing_daily_map WHERE child_slug = ?').get(childSlug);
-    return row?.habitica_task_id ?? null;
+    const row = this.db.prepare('SELECT * FROM packing_daily_map WHERE child_slug = ?').get(childSlug);
+    return row ?? null;
   }
 
+  /** Map a (re)created packing Daily; both timestamps restart with it. */
   writePackingDaily(childSlug, taskId) {
     if (this.readOnly) {
       return;
     }
+    const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO packing_daily_map (child_slug, habitica_task_id) VALUES (?, ?)
-         ON CONFLICT(child_slug) DO UPDATE SET habitica_task_id = excluded.habitica_task_id`,
+        `INSERT INTO packing_daily_map (child_slug, habitica_task_id, created_at, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(child_slug) DO UPDATE SET
+           habitica_task_id = excluded.habitica_task_id,
+           created_at = excluded.created_at,
+           updated_at = excluded.updated_at`,
       )
-      .run(childSlug, taskId);
+      .run(childSlug, taskId, now, now);
+  }
+
+  /** The checklist changed on this Daily. */
+  touchPackingDaily(childSlug) {
+    if (this.readOnly) {
+      return;
+    }
+    this.db
+      .prepare('UPDATE packing_daily_map SET updated_at = ? WHERE child_slug = ?')
+      .run(new Date().toISOString(), childSlug);
   }
 
   // --- Dashboard-managed tasks ---------------------------------------------

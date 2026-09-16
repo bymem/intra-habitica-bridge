@@ -1,6 +1,6 @@
 {
   "name": "intra-habitica-bridge",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "SkoleIntra homework and calendar packing lists as Habitica tasks, per kid, for Home Assistant",
   "type": "module",
   "private": true,

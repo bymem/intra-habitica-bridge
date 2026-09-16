@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { recreate } from '../jobs/watchdog.js';
+import { localIsoDate } from '../skoleintra/scraper.js';
 
 /**
  * Parent dashboard: backend API and static UI host.
@@ -191,8 +192,9 @@ async function handle(req, res, { config, store, habitica, jobs }) {
 }
 
 /**
- * The kid's dashboard-managed tasks plus the packing Daily, merged with what
- * Habitica currently says about each (done, streak, paused, still exists).
+ * Everything the bridge tracks for one kid — dashboard tasks, homework and
+ * the packing Daily — merged with what Habitica currently says about each
+ * (done, streak, paused, still exists).
  */
 async function listTasks(child, store, habitica) {
   const live = await habitica.getTasks(child.habitica_config_entry, ['todo', 'daily']);
@@ -211,15 +213,38 @@ async function listTasks(child, store, habitica) {
       dueDate: row.due_date,
       repeatDays: row.repeat_days ? row.repeat_days.split(',') : [],
       difficulty: row.difficulty,
+      createdAt: row.created_at,
+      updatedAt: null,
       ...liveState(live.get(row.habitica_task_id)),
     }));
 
-  const packingId = store.readPackingDaily(child.slug);
-  if (packingId) {
-    const task = live.get(packingId);
+  // Homework from today on; SkoleIntra owns the content, so it's read-only
+  // here and the title/notes come from the live task.
+  for (const row of store.listHomework(child.slug, localIsoDate())) {
+    const [date, subject] = row.source_key.split('::');
+    const task = live.get(row.habitica_task_id);
     tasks.push({
       id: null,
-      taskId: packingId,
+      taskId: row.habitica_task_id,
+      source: 'homework',
+      type: 'todo',
+      title: task?.text ?? subject,
+      notes: task?.notes ?? null,
+      dueDate: date,
+      repeatDays: [],
+      difficulty: child.homework_difficulty,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ...liveState(task),
+    });
+  }
+
+  const packing = store.readPackingDaily(child.slug);
+  if (packing) {
+    const task = live.get(packing.habitica_task_id);
+    tasks.push({
+      id: null,
+      taskId: packing.habitica_task_id,
       source: 'packing',
       type: 'daily',
       title: task?.text ?? 'Pakkeliste',
@@ -228,6 +253,8 @@ async function listTasks(child, store, habitica) {
       repeatDays: [],
       difficulty: child.packing_difficulty,
       checklistCount: task?.checklist?.length ?? 0,
+      createdAt: packing.created_at,
+      updatedAt: packing.updated_at,
       ...liveState(task),
     });
   }

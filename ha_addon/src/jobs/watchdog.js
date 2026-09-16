@@ -68,7 +68,7 @@ async function checkChild({ child, store, ha, habitica, log }) {
 
   // --- Streak snapshots ------------------------------------------------------
   const trackedDailies = [
-    store.readPackingDaily(child.slug),
+    store.readPackingDaily(child.slug)?.habitica_task_id,
     ...store.listManagedTasks(child.slug).filter((row) => row.task_type === 'daily').map((row) => row.habitica_task_id),
   ].filter(Boolean);
 

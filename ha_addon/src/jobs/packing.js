@@ -54,7 +54,7 @@ async function syncChild({ child, store, ha, habitica, log }) {
 
   const entry = child.habitica_config_entry;
   const dailies = await habitica.getTasks(entry, ['daily']);
-  const mappedId = store.readPackingDaily(child.slug);
+  const mappedId = store.readPackingDaily(child.slug)?.habitica_task_id ?? null;
   const existing = mappedId ? dailies.get(mappedId) : null;
 
   // No Daily yet, or the mapped one was deleted: create fresh, same as the
@@ -91,5 +91,6 @@ async function syncChild({ child, store, ha, habitica, log }) {
     fields.remove_checklist_item = remove;
   }
   await habitica.updateDaily(entry, mappedId, fields);
+  store.touchPackingDaily(child.slug);
   log.info(`checklist updated: +${add.length} -${remove.length}`);
 }
